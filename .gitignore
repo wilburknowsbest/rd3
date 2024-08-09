@@ -3,10 +3,8 @@
 .vscode/*
 *.log
 **/.terraform/**
-jupyter-notebooks/\.ipynb_checkpoints/
+**/.ipynb_checkpoints
 *.pyc
 **/.boto/*
 **/venv
 **/__pycache__
-**/.idea
-**/*.bak

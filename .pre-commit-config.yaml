@@ -1,0 +1,47 @@
+default_language_version:
+  python: python3.11
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-docstring-first
+        verbose: true
+      - id: end-of-file-fixer
+      - id: pretty-format-json
+        args: ["--autofix", "--top-keys", "name,private,scripts,version"]
+        files: "package.json$"
+        name: "pretty-format-package.json"
+      - id: pretty-format-json
+        args: ["--autofix"]
+      - id: requirements-txt-fixer
+      - id: trailing-whitespace
+      - id: debug-statements
+
+  - repo: https://github.com/psf/black
+    rev: 22.10.0
+    hooks:
+      - id: black
+        files: ^services/backend/.*\.(py)$
+
+  - repo: https://github.com/pycqa/autoflake
+    rev: v2.0.0
+    hooks:
+      - id: autoflake
+        files: ^services/backend/.*\.py$
+        args:
+          [
+            "--remove-all-unused-imports",
+            "--remove-unused-variables",
+            "--in-place"
+          ]
+
+   # https://www.flake8rules.com/
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        files: ^services/backend/.*\.(py)$
+        args: ["--ignore", "E203,E501,W503,E402,W605"]
