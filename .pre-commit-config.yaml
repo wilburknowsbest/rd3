@@ -24,7 +24,7 @@ repos:
     rev: 24.8.0
     hooks:
       - id: black
-        files: ^services/backend/.*\.(py)$
+        files: ^services/backend/.*\.py$
 
   - repo: https://github.com/pycqa/autoflake
     rev: v2.3.1
@@ -43,5 +43,5 @@ repos:
     rev: 7.1.1
     hooks:
       - id: flake8
-        files: ^services/backend/.*\.(py)$
+        files: ^services/backend/.*\.py$
         args: ["--ignore", "E203,E501,W503,E402,W605"]
