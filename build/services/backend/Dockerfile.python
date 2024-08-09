@@ -1,0 +1,11 @@
+FROM python:3.12-slim-bullseye
+
+ARG SERVICE_NAME
+ARG WORK_DIR=/opt/service
+WORKDIR $WORK_DIR
+
+COPY services/backend/$SERVICE_NAME/ $WORK_DIR/
+COPY services/backend/shared/ $WORK_DIR/shared/
+
+COPY build/services/backend/pip_install.sh /_build/
+RUN /_build/pip_install.sh

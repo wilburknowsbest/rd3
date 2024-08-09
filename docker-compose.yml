@@ -1,0 +1,86 @@
+version: "3.5"
+
+volumes:
+  db_data:
+
+services:
+
+  db:
+    image: postgres:16.3-bullseye
+    container_name: db
+    shm_size: "256mb"
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - "./build/services/db/local_db_setup.sql:/docker-entrypoint-initdb.d/init.sql"
+      - "db_data:/var/lib/postgresql/data"
+    ports:
+      - 5432:5432
+    command: ["postgres", "-c", "log_statement=all"]
+    networks:
+      default:
+        aliases:
+          - db.piccolo
+
+  # redis:
+  #   image: redis:7.4-alpine
+  #   container_name: redis
+  #   volumes:
+  #     - ./build/services/redis/local_redis.conf:/usr/local/etc/redis/redis.conf
+  #   command:
+  #     [
+  #       sh,
+  #       -c,
+  #       "rm -f /data/dump.rdb && redis-server /usr/local/etc/redis/redis.conf"
+  #     ]
+  #   ports:
+  #     - 6379:6379
+  #   networks:
+  #     default:
+  #       aliases:
+  #         - redis.fastbase
+
+  api:
+    depends_on:
+      - db
+      # - redis
+    build:
+      context: ./
+      dockerfile: build/services/backend/Dockerfile.python
+      args:
+        SERVICE_NAME: "api"
+
+    container_name: api
+    volumes:
+      - ./services/backend/api/:/opt/service/:delegated
+      - ./services/backend/shared:/opt/service/shared:delegated
+    command: python3 main.py
+
+    ports:
+      - 9000:9000
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONIOENCODING=utf-8
+      - PYTHONPATH=/opt/service
+      - ENV=local
+      - APP_PORT=9000
+    networks:
+      default:
+        aliases:
+          - api.piccolo
+
+  labramp:
+    build:
+      context: ./
+      dockerfile: build/services/frontend/Dockerfile.node
+      args:
+        SERVICE_NAME: "labramp"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./services/frontend/labramp/:/opt/service/:delegated
+      - /opt/service/node_modules
+    networks:
+      default:
+        aliases:
+          - ui.labramp

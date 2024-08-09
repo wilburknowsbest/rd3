@@ -1,0 +1,14 @@
+# Use the official Node.js image.
+FROM node:18 AS build
+
+# Set the working directory.
+ARG SERVICE_NAME
+ARG WORK_DIR=/opt/service
+WORKDIR $WORK_DIR
+
+COPY services/frontend/$SERVICE_NAME/ $WORK_DIR/
+
+# Install dependencies.
+RUN npm install
+
+CMD ["npm", "start"]
