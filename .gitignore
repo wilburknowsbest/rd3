@@ -1,0 +1,12 @@
+
+**/node_modules
+.vscode/*
+*.log
+**/.terraform/**
+jupyter-notebooks/\.ipynb_checkpoints/
+*.pyc
+**/.boto/*
+**/venv
+**/__pycache__
+**/.idea
+**/*.bak
