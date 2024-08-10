@@ -1,0 +1,263 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploys an EC2 instance, ECS service with ECR, ALB, and RDS instance in a single VPC.
+
+Parameters:
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  ImageName:
+    Description: The name of the Docker image in ECR (e.g., my-app:latest)
+    Type: String
+
+  DBUsername:
+    Description: Database Master Username
+    Type: String
+
+  DBPassword:
+    Description: Database Master Password
+    Type: String
+
+Resources:
+  # Create a VPC
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      Tags:
+        - Key: Name
+          Value: MyVPC
+
+  # Create subnets in different Availability Zones
+  MySubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: MySubnet1
+
+  MySubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: MySubnet2
+
+  # Create an Internet Gateway
+  MyInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyInternetGateway
+
+  # Attach Internet Gateway to VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref MyInternetGateway
+
+  # Create a route table
+  MyRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+
+  # Create a route table
+  MyRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      RouteTableId: !Ref MyRouteTable
+      GatewayId: !Ref MyInternetGateway
+
+  # Associate route table with subnets
+  MySubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MySubnet1
+      RouteTableId: !Ref MyRouteTable
+
+  MySubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref MySubnet2
+      RouteTableId: !Ref MyRouteTable
+
+  # Create a security group
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH, HTTP, and HTTPS access
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: "0.0.0.0/0"
+
+  # Create an ECR repository
+  MyECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: my-app-repo
+
+  # Create an ECS Cluster
+  MyECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: MyECSCluster
+
+  # Create a Launch Template
+  MyLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: MyLaunchTemplate
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        ImageId: ami-0c55b159cbfafe1f0
+        KeyName: !Ref KeyName
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=${MyECSCluster} >> /etc/ecs/ecs.config
+        SecurityGroupIds:
+          - !Ref MySecurityGroup
+
+  # Create an EC2 instance that uses the launch template
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref MyLaunchTemplate
+        Version: !GetAtt MyLaunchTemplate.LatestVersionNumber
+
+  # Create an Application Load Balancer
+  MyALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: MyALB
+      Subnets:
+        - !Ref MySubnet1
+        - !Ref MySubnet2
+      SecurityGroups:
+        - !Ref MySecurityGroup
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Type: application
+
+  # Create a target group for the ALB
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: MyTargetGroup
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref MyVPC
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /
+      TargetType: instance
+
+  # Create a listener for the ALB
+  MyListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 200
+            ContentType: text/plain
+            MessageBody: "Hello World"
+      LoadBalancerArn: !Ref MyALB
+      Port: 80
+      Protocol: HTTP
+
+  # Create an ECS Task Definition
+  MyTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: MyTaskDefinition
+      ContainerDefinitions:
+        - Name: my-container
+          Image: !Sub "${MyECRRepository}.dkr.ecr.${AWS::Region}.amazonaws.com/${ImageName}"
+          Essential: true
+          Memory: 512
+          Cpu: 256
+          PortMappings:
+            - ContainerPort: 80
+
+  # Create an ECS Service
+  MyECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MyECSCluster
+      ServiceName: MyECSService
+      TaskDefinition: !Ref MyTaskDefinition
+      LoadBalancers:
+        - TargetGroupArn: !Ref MyTargetGroup
+          ContainerName: my-container
+          ContainerPort: 80
+      DesiredCount: 1
+      LaunchType: EC2
+
+  # Create an RDS instance
+  MyRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      MasterUsername: !Sub "${DBUsername}"
+      MasterUserPassword: !Sub "${DBPassword}"
+      AllocatedStorage: 20
+      DBInstanceIdentifier: MyRDSInstance
+      VPCSecurityGroups:
+        - !Ref MySecurityGroup
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+
+  # Create a DB subnet group
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: My DB Subnet Group
+      SubnetIds:
+        - !Ref MySubnet1
+
+Outputs:
+  EC2InstanceId:
+    Description: The Instance ID of the EC2 instance
+    Value: !Ref MyEC2Instance
+
+  ECSClusterName:
+    Description: The name of the ECS Cluster
+    Value: !Ref MyECSCluster
+
+  ALB:
+    Description: The DNS name of the Application Load Balancer
+    Value: !GetAtt MyALB.DNSName
+
+  RDSInstanceEndpoint:
+    Description: The endpoint of the RDS instance
+    Value: !GetAtt MyRDSInstance.Endpoint.Address
+
+  ECRRepositoryURI:
+    Description: The URI of the ECR repository
+    Value: !Sub "${MyECRRepository}.dkr.ecr.${AWS::Region}.amazonaws.com"
